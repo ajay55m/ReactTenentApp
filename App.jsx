@@ -1,3 +1,4 @@
+// App.jsx
 import React, { useState, useEffect } from "react";
 import {
   SafeAreaView,
@@ -34,36 +35,24 @@ import { SessionProvider, useSession } from "./src/context/SessionContext";
 const AppContent = () => {
   const { session, saveSession, isReady } = useSession();
 
+  // ✅ ALL HOOKS FIRST (NO RETURNS ABOVE THIS)
   const [selectedPage, setSelectedPage] = useState("dashboard");
   const [notifOpen, setNotifOpen] = useState(false);
   const [isCloudDown, setIsCloudDown] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [notifications] = useState([]);
 
-  // ⏳ Wait until session loads
-  if (!isReady) {
-    return null;
-  }
-
-  // 🔐 Not logged in
-  if (!session) {
-    return <AuthScreen onLoginSuccess={saveSession} />;
-  }
-
-  // 🔁 LOGIN REDIRECT LOGIC (EXACT REQUIREMENT)
+  // 🔁 LOGIN REDIRECT LOGIC
   useEffect(() => {
     if (!session) return;
 
-    if (session?.Status === 1) {
+    if (session?.Status === 1 || session?.status === 1) {
       setSelectedPage("dashboard");
-      return;
-    }
-
-    if (session?.SubmissionStatus === "Rejected") {
+    } else if (session?.SubmissionStatus === "Rejected") {
       setSelectedPage("approval-cancelled");
-      return;
+    } else {
+      setSelectedPage("approval-pending");
     }
-
-    setSelectedPage("approval-pending");
   }, [session]);
 
   // ⏱ Fake loader
@@ -72,7 +61,14 @@ const AppContent = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  const [notifications] = useState([]);
+  // 🚫 NOW it is safe to return conditionally
+  if (!isReady) {
+    return null;
+  }
+
+  if (!session) {
+    return <AuthScreen onLoginSuccess={saveSession} />;
+  }
 
   const handleMenuSelect = (key) => {
     if (key === "logout") {
@@ -95,7 +91,6 @@ const AppContent = () => {
     setIsCloudDown(false);
   };
 
-  // 🔒 HIDE HEADER & FOOTER ON APPROVAL SCREENS
   const isApprovalScreen =
     selectedPage === "approval-pending" ||
     selectedPage === "approval-cancelled";
@@ -140,7 +135,7 @@ const AppContent = () => {
             )}
 
             {selectedPage === "approval-pending" && (
-              <TenantApprovalPending />
+              <TenantApprovalPending onBack={() => saveSession(null)} />
             )}
 
             {selectedPage === "approval-cancelled" && (
@@ -148,39 +143,14 @@ const AppContent = () => {
             )}
 
             {selectedPage === "profile" && <Profile loading={loading} />}
-
-            {selectedPage === "request-moveout" && (
-              <RequestMove loading={loading} />
-            )}
-
-            {selectedPage === "Notifications" && (
-              <NotificationsScreen loading={loading} />
-            )}
-
-            {selectedPage === "my-contract" && (
-              <MyContract loading={loading} />
-            )}
-
-            {selectedPage === "renew-contract" && (
-              <RenewContract loading={loading} />
-            )}
-
-            {selectedPage === "bill-history" && (
-              <Bill loading={loading} />
-            )}
-
-            {selectedPage === "Bill-Due" && (
-              <BillScreen loading={loading} />
-            )}
-
-            {selectedPage === "payment-history" && (
-              <PaymentHistory loading={loading} />
-            )}
-
-            {selectedPage === "raise-ticket" && (
-              <RaiseTicket loading={loading} />
-            )}
-
+            {selectedPage === "request-moveout" && <RequestMove loading={loading} />}
+            {selectedPage === "Notifications" && <NotificationsScreen loading={loading} />}
+            {selectedPage === "my-contract" && <MyContract loading={loading} />}
+            {selectedPage === "renew-contract" && <RenewContract loading={loading} />}
+            {selectedPage === "bill-history" && <Bill loading={loading} />}
+            {selectedPage === "Bill-Due" && <BillScreen loading={loading} />}
+            {selectedPage === "payment-history" && <PaymentHistory loading={loading} />}
+            {selectedPage === "raise-ticket" && <RaiseTicket loading={loading} />}
             {selectedPage === "pay-now" && (
               <Payment onHome={() => setSelectedPage("dashboard")} />
             )}

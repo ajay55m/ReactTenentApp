@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const TenantApprovalPending = ({ navigation }) => {
+const TenantApprovalPending = ({ onBack }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#F5F7FB" />
@@ -40,9 +40,10 @@ const TenantApprovalPending = ({ navigation }) => {
             <Text style={styles.email}>utility@strata-global.com</Text>
           </TouchableOpacity>
 
+          {/* ✅ FIXED LOGIN BUTTON */}
           <TouchableOpacity
             style={styles.loginButton}
-            onPress={() => navigation.replace("Login")}
+            onPress={onBack}
           >
             <Text style={styles.loginText}>Login Here</Text>
           </TouchableOpacity>
@@ -53,6 +54,8 @@ const TenantApprovalPending = ({ navigation }) => {
 };
 
 export default TenantApprovalPending;
+
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,

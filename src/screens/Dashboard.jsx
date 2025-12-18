@@ -253,16 +253,6 @@ export default function Dashboard({ onPress }) {
         <UserCard onPressCopy={handleCopyLink} />
       </View>
 
-<View style={{ marginVertical: 12 }}>
-  <TouchableOpacity
-    style={styles.button}
-    onPress={() => onPress && onPress("approval-pending")}
-  >
-    <Text style={styles.text}>Go to Approval Pending</Text>
-  </TouchableOpacity>
-</View>
-
-
       {/* Stat cards */}
       <View style={styles.statsGrid}>
         {stats.map((stat, index) => (
