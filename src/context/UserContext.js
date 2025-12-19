@@ -6,7 +6,7 @@ import { getApprovedClient } from "../apiConfig"; // ✅ use apiConfig
 export const UserContext = createContext({
   profile: null,
   loading: true,
-  reloadProfile: () => {},
+  reloadProfile: () => { },
 });
 
 export const UserProvider = ({ children }) => {

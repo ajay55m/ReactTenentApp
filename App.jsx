@@ -7,69 +7,125 @@ import {
   StatusBar,
   Platform,
 } from "react-native";
-
 import Header from "./src/components/Header";
-import Dashboard from "./src/screens/Dashboard";
 import Footer from "./src/components/Footer";
+import Dashboard from "./src/screens/Dashboard";
 import Profile from "./src/screens/Profile";
 import RequestMove from "./src/screens/RequestMove";
-import NoInternetConnectionWrapper from "./src/wrappers/NoInternetConnectionWrapper";
-import NotificationsScreen from "./src/notifications/NotificationsScreen";
-import NotificationDropdown from "./src/notifications/NotificationDropdown";
-import CloudErrorConnection from "./src/screens/CloudErrorConnection";
 import MyContract from "./src/screens/MyContract";
 import RenewContract from "./src/screens/RenewContract";
 import Bill from "./src/screens/BillHistory";
+import BillScreen from "./src/screens/BillDue";
 import Payment from "./src/screens/Payment";
 import PaymentHistory from "./src/screens/PaymentHistory";
-import RaiseTicket from "./src/screens/RaiseTicket";
-import AuthScreen from "./src/Auth/AuthScreen";
-import BillScreen from "./src/screens/BillDue";
-
+import TicketScreen from "./src/screens/RaiseTicket";
+import OwnerBuildingSelect from "./src/screens/Owner/OwnerBuildingSelect";
 import TenantApprovalPending from "./src/screens/ApprovalPending/TenantApprovalPending";
 import TenantRequestCancelled from "./src/screens/ApprovalPending/TenantRequestCancelled";
-
+import NotificationsScreen from "./src/notifications/NotificationsScreen";
+import NotificationDropdown from "./src/notifications/NotificationDropdown";
+import AuthScreen from "./src/Auth/AuthScreen";
+import CloudErrorConnection from "./src/screens/CloudErrorConnection";
+import NoInternetConnectionWrapper from "./src/wrappers/NoInternetConnectionWrapper";
 import { UserProvider } from "./src/context/UserContext";
 import { SessionProvider, useSession } from "./src/context/SessionContext";
 
 const AppContent = () => {
   const { session, saveSession, isReady } = useSession();
-
-  // ✅ ALL HOOKS FIRST (NO RETURNS ABOVE THIS)
   const [selectedPage, setSelectedPage] = useState("dashboard");
   const [notifOpen, setNotifOpen] = useState(false);
   const [isCloudDown, setIsCloudDown] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notifications] = useState([]);
 
-  // 🔁 LOGIN REDIRECT LOGIC
-  useEffect(() => {
-    if (!session) return;
+  /* ---------------- OWNER BUILDING SELECT ---------------- */
+  const handleOwnerBuildingSelect = (building) => {
+    saveSession({
+      ...session,
+      selectedBuilding: building,
+    });
+    setSelectedPage("dashboard");
+  };
 
-    if (session?.Status === 1 || session?.status === 1) {
+  /* ---------------- LOGIN REDIRECT LOGIC - FIXED ---------------- */
+  useEffect(() => {
+    if (!session) {
       setSelectedPage("dashboard");
-    } else if (session?.SubmissionStatus === "Rejected") {
-      setSelectedPage("approval-cancelled");
-    } else {
-      setSelectedPage("approval-pending");
+      return;
     }
+
+    // FIXED: Check all variations of type IDs to support both raw API data and SessionContext data
+    const clientType = Number(
+      session.clientTypeId ??
+      session.userTypeId ??
+      session.ClientTypeid ??
+      session.UserTypeId
+    );
+
+    console.log("Debug Session:", JSON.stringify(session));
+
+    // 🏢 OWNER (ClientTypeid/UserTypeId = 1)
+    if (clientType === 1) {
+      // Check building select logic
+      if (!session.selectedBuilding) {
+        setSelectedPage("owner-building-select");
+        return;
+      }
+      setSelectedPage("dashboard");
+      return;
+    }
+
+    // 👤 TENANT (ClientTypeid/UserTypeId = 2)
+    if (clientType === 2) {
+      const status = Number(session.status);
+
+      // Check for SubmissionStatus in various forms
+      const rawSubmissionStatus =
+        session.SubmissionStatus ||
+        session.submissionStatus ||
+        "";
+
+      const submissionStatus = rawSubmissionStatus.toLowerCase();
+
+      // ✅ Approved tenant (status = 1) → Dashboard
+      if (status === 1) {
+        setSelectedPage("dashboard");
+        return;
+      } else {
+        // ❌ Rejected tenant
+        if (submissionStatus === "rejected") {
+          setSelectedPage("approval-cancelled");
+          return;
+        } else {
+          // ⏳ Pending tenant (default if not approved and not rejected)
+          setSelectedPage("approval-pending");
+          return;
+        }
+      }
+    }
+
+    // 🔄 Default fallback for any other client type
+    setSelectedPage("dashboard");
   }, [session]);
 
-  // ⏱ Fake loader
+  /* ---------------- FAKE LOADER ---------------- */
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 1000);
     return () => clearTimeout(timer);
   }, []);
 
-  // 🚫 NOW it is safe to return conditionally
-  if (!isReady) {
-    return null;
-  }
+  /* ---------------- SAFE RETURNS ---------------- */
+  if (!isReady) return null;
 
   if (!session) {
     return <AuthScreen onLoginSuccess={saveSession} />;
   }
 
+  if (selectedPage === "owner-building-select") {
+    return <OwnerBuildingSelect onSelect={handleOwnerBuildingSelect} />;
+  }
+
+  /* ---------------- HANDLERS ---------------- */
   const handleMenuSelect = (key) => {
     if (key === "logout") {
       saveSession(null);
@@ -78,23 +134,20 @@ const AppContent = () => {
     setSelectedPage(key);
   };
 
-  const handleHeaderLogout = () => {
-    saveSession(null);
-  };
+  const handleHeaderLogout = () => saveSession(null);
 
   const handleNotificationNavigation = (screenName) => {
     setNotifOpen(false);
     setSelectedPage(screenName);
   };
 
-  const handleRetry = () => {
-    setIsCloudDown(false);
-  };
+  const handleRetry = () => setIsCloudDown(false);
 
   const isApprovalScreen =
     selectedPage === "approval-pending" ||
     selectedPage === "approval-cancelled";
 
+  /* ---------------- CLOUD ERROR ---------------- */
   if (isCloudDown) {
     return (
       <CloudErrorConnection
@@ -108,6 +161,7 @@ const AppContent = () => {
     );
   }
 
+  /* ---------------- MAIN UI ---------------- */
   return (
     <NoInternetConnectionWrapper>
       <SafeAreaView style={styles.safeArea}>
@@ -115,21 +169,17 @@ const AppContent = () => {
 
         <View style={styles.root}>
           <View style={styles.mainContent}>
-
-            {/* HEADER */}
             {!isApprovalScreen && (
               <Header
                 onPress={handleMenuSelect}
                 onNavigate={handleMenuSelect}
                 onToggleNotifications={() => setNotifOpen((v) => !v)}
                 unreadCount={notifications.filter((n) => n.unread).length}
-                tenantName={session?.clientName || "Tenant"}
+                tenantName={session?.clientName || session?.FirstName || "Tenant"}
                 tenantAvatar={session?.profileImage}
                 onLogout={handleHeaderLogout}
               />
             )}
-
-            {/* SCREENS */}
             {selectedPage === "dashboard" && (
               <Dashboard loading={loading} onPress={handleMenuSelect} />
             )}
@@ -139,7 +189,11 @@ const AppContent = () => {
             )}
 
             {selectedPage === "approval-cancelled" && (
-              <TenantRequestCancelled onBack={() => saveSession(null)} />
+              <TenantRequestCancelled
+                reason={session?.Reason || session?.reason || "Request rejected"}
+                onResubmit={() => setSelectedPage("request-moveout")}
+                onBack={() => saveSession(null)}
+              />
             )}
 
             {selectedPage === "profile" && <Profile loading={loading} />}
@@ -150,18 +204,16 @@ const AppContent = () => {
             {selectedPage === "bill-history" && <Bill loading={loading} />}
             {selectedPage === "Bill-Due" && <BillScreen loading={loading} />}
             {selectedPage === "payment-history" && <PaymentHistory loading={loading} />}
-            {selectedPage === "raise-ticket" && <RaiseTicket loading={loading} />}
+            {selectedPage === "raise-ticket" && <TicketScreen loading={loading} />}
             {selectedPage === "pay-now" && (
               <Payment onHome={() => setSelectedPage("dashboard")} />
             )}
           </View>
 
-          {/* FOOTER */}
           {!isApprovalScreen && (
             <Footer onPress={handleMenuSelect} selectedPage={selectedPage} />
           )}
 
-          {/* NOTIFICATIONS */}
           <NotificationDropdown
             open={notifOpen}
             onClose={() => setNotifOpen(false)}
@@ -188,35 +240,9 @@ const App = () => (
 );
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  root: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  mainContent: {
-    flex: 1,
-  },
-  testButton: {
-    backgroundColor: "#EF4444",
-    padding: 16,
-    margin: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  testButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  safeArea: { flex: 1, backgroundColor: "#f5f5f5" },
+  root: { flex: 1, backgroundColor: "#f5f5f5" },
+  mainContent: { flex: 1 },
 });
 
 export default App;

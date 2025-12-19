@@ -35,11 +35,7 @@ const MENU_ITEMS = [
     icon: require("../../assets/images/bill.png"),
     hasDropdown: true,
     subItems: [
-      {
-        key: "Bill-Due",
-        label: "Bill Due",
-        icon: require("../../assets/images/billing-due.png"),
-      },
+
       {
         key: "bill-history",
         label: "Bill History",

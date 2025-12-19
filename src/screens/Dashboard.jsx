@@ -23,6 +23,13 @@ const OVERVIEW_FILTERS = [
   { key: 'last-3-months', label: 'Last 3 Months' },
 ];
 
+const STAT_ICONS = {
+  "Total Outstanding": require("../../assets/images/rank.png"),
+  "Last Paid": require("../../assets/images/billNew.png"),
+  "Active Connection": require("../../assets/images/profit.png"),
+  "Inactive Connection": require("../../assets/images/loading-bar.png"),
+};
+
 const COLOR_MAP = {
   success: '#D7F5DE',
   info: '#E5D7FF',
@@ -30,8 +37,14 @@ const COLOR_MAP = {
   warning: '#FFE3C2',
 };
 
-const StatCard = ({ label, value, percent, description, colorCss, icon, onPress }) => {
+const cleanLabel = (raw = "") =>
+  raw.replace(/<br\/>.*$/i, "").trim();
+
+const StatCard = ({ label, value, percent, description, colorCss, onPress }) => {
+  const cleanedLabel = cleanLabel(label);
   const color = COLOR_MAP[colorCss] || '#E5D7FF';
+  const iconSource = STAT_ICONS[cleanedLabel];
+
   return (
     <TouchableOpacity
       style={[
@@ -47,19 +60,28 @@ const StatCard = ({ label, value, percent, description, colorCss, icon, onPress 
     >
       <View style={styles.statRow}>
         <View style={styles.statIconBox}>
-          <Text style={styles.statIcon}>{icon}</Text>
+          {iconSource && (
+            <Image
+              source={iconSource}
+              style={styles.statIconImage}
+            />
+          )}
         </View>
 
         <View style={styles.statTextBox}>
           <Text style={styles.statValueText}>{value}</Text>
-          <Text style={styles.statLabelText}>{label.replace(/<br\/>.*<\/a>/, '')}</Text>
-          {description && <Text style={styles.statDescription}>{description}</Text>}
+          <Text style={styles.statLabelText}>{cleanedLabel}</Text>
+          {description && (
+            <Text style={styles.statDescription}>{description}</Text>
+          )}
           {percent && <Text style={styles.statPercent}>{percent}%</Text>}
         </View>
       </View>
     </TouchableOpacity>
   );
 };
+
+
 
 // simple skeleton block
 const SkeletonBox = ({ style }) => (
@@ -169,7 +191,7 @@ function DashboardSkeleton() {
 export default function Dashboard({ onPress }) {
   const { session } = useSession();
   const loginKey = session?.loginKey;
-
+  const buildingId = session?.selectedBuilding?.BuildingId;
   const [stats, setStats] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -182,9 +204,15 @@ export default function Dashboard({ onPress }) {
     }
     onPress && onPress(label);
   };
-  useEffect(() => {
+useEffect(() => {
   if (!loginKey) {
     console.warn("⚠️ Dashboard skipped: loginKey missing");
+    return;
+  }
+
+  // OWNER must have building selected
+  if (session?.ClientTypeid === 1 && !buildingId) {
+    console.warn("⚠️ Owner dashboard skipped: building not selected");
     return;
   }
 
@@ -192,7 +220,7 @@ export default function Dashboard({ onPress }) {
     try {
       setLoading(true);
 
-      const res = await getCustomerDashboard(loginKey);
+      const res = await getCustomerDashboard(loginKey, buildingId);
 
       if (!res.ok) {
         console.error("Dashboard API error:", res.status, res.data);
@@ -210,7 +238,7 @@ export default function Dashboard({ onPress }) {
   };
 
   loadDashboard();
-}, [loginKey]);
+}, [loginKey, buildingId]);
 
   const handleStatPress = (stat) => {
     Alert.alert('Stat Pressed', `You pressed: ${stat.Type}`);
@@ -255,19 +283,17 @@ export default function Dashboard({ onPress }) {
 
       {/* Stat cards */}
       <View style={styles.statsGrid}>
-        {stats.map((stat, index) => (
-          <StatCard
-            key={index}
-            label={stat.Type}
-            value={stat.Value}
-            percent={stat.PerCent}
-            description={stat.Description}
-            colorCss={stat.ColorCss}
-            icon={stat.Icon}
-            onPress={() => handleStatPress(stat)}
-          />
-        ))}
-      </View>
+       {stats.map((stat, index) => (
+       <StatCard
+      key={index}
+      label={stat.Type}
+      value={stat.Value}
+      description={stat.Description}
+      colorCss={stat.ColorCss}
+      onPress={() => handleStatPress(stat)}
+    />
+  ))}
+</View>
 
       {/* Consumption card */}
       <View style={styles.glassWrapper}>
@@ -574,7 +600,7 @@ const styles = StyleSheet.create({
   statIconImage: { width: 22, height: 22, resizeMode: 'contain' },
   statTextBox: { flex: 1 },
   statValueText: {
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
     marginBottom: 2,

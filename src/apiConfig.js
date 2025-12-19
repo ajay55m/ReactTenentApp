@@ -12,6 +12,8 @@ export const ENDPOINTS = {
   approvedClient: "/get-approved-client",
   finalBillRequest: "/final-bill-request-get",
   customerDashboard: "/Cust_Dashboard",
+  raiseTicket: "/ServiceTicketAdd",
+  clientMeters: "/client-meters",
 };
 
 const apiGetDashboard = async (endpoint, params = {}) => {
@@ -136,4 +138,24 @@ export const getPaymentHistory = ({
 export const getCustomerDashboard = (key) =>
   apiGetDashboard("/Cust_Dashboard", { Key: key });
 
+export const getOwnerBuildings = async (loginKey) => {
+  return apiGet("/get-owner-buildings", {}, { authToken: loginKey });
+};
 
+// POST – Raise service ticket (CORRECT SERVER)
+export const raiseServiceTicket = async (payload) => {
+  const res = await fetch(`${DASHBOARD_BASE_URL}/ServiceTicketAdd`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  return { ok: res.ok, status: res.status, data };
+};
+
+// GET – Client meters (for dropdown)
+export const getClientMeters = (loginKey) =>
+  apiGet(ENDPOINTS.clientMeters, { loginKey });

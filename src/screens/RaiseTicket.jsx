@@ -1,4 +1,3 @@
-// src/RaiseTicket.jsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -8,45 +7,138 @@ import {
   ScrollView,
   Image,
   TextInput,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import GreetingCard from "../components/GreetingCard"; // ✅ uses context-based greeting
+import GreetingCard from "../components/GreetingCard";
+import { useSession } from "../context/SessionContext";
+import {
+  raiseServiceTicket,
+  getApprovedClient,
+  getClientMeters,
+} from "../apiConfig";
+import { Picker } from "@react-native-picker/picker";
 
-// 🔹 Simple skeleton box
+// ═══════════════════════════════════════════════════════════════
+// HELPER COMPONENTS
+// ═══════════════════════════════════════════════════════════════
+
 const SkeletonBox = ({ style }) => <View style={[styles.skeletonBox, style]} />;
 
+/* ─── Modern card component ────────────────────────────── */
+const SummaryCard = ({ title, value, color, borderColor, icon }) => (
+  <View style={[styles.card, { backgroundColor: color, borderColor, borderWidth: 1 }]}>
+    <View style={styles.cardTopRow}>
+      <View style={styles.cardIconWrapper}>{icon}</View>
+      <View style={styles.cardTextWrapper}>
+        <Text style={styles.cardValue}>{value}</Text>
+        <Text style={styles.cardTitle}>{title}</Text>
+      </View>
+    </View>
+  </View>
+);
+
+const FormField = ({ label, required, height = 44, readOnly = false, ...props }) => (
+  <View style={styles.fieldWrapper}>
+    <Text style={styles.label}>
+      {label}
+      {required && <Text style={styles.required}>*</Text>}
+    </Text>
+    <TextInput
+      style={[styles.input, { height }, readOnly && styles.readOnlyInput]}
+      editable={!readOnly}
+      placeholderTextColor="#9ca3af"
+      {...props}
+    />
+  </View>
+);
+
+const Row = ({ label, value, customValue }) => (
+  <View style={styles.row}>
+    <Text style={styles.rowLabel}>{label}</Text>
+    {customValue ? customValue : <Text style={styles.rowValue}>{value}</Text>}
+  </View>
+);
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════
+
 const TicketScreen = ({ loading = false }) => {
-  const [activeTab, setActiveTab] = useState("dashboard"); // "dashboard" or "add"
-  const [formLoading, setFormLoading] = useState(false);   // add form skeleton
+  const { session } = useSession();
+  const loginKey = session?.loginKey;
+  const clientId = session?.clientId;
+
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [formLoading, setFormLoading] = useState(false);
+  const [profileData, setProfileData] = useState(null);
 
   const formTimerRef = useRef(null);
 
-  // cleanup form timer on unmount
-  useEffect(() => {
-    return () => {
-      if (formTimerRef.current) {
-        clearTimeout(formTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Form states for Add Ticket
+  // ───────── FORM STATE ─────────
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [building, setBuilding] = useState("");
   const [unitNo, setUnitNo] = useState("");
   const [issueType, setIssueType] = useState("");
+  const [meters, setMeters] = useState([]);
   const [meterName, setMeterName] = useState("");
   const [description, setDescription] = useState("");
 
+  // ───────── LIFECYCLE ─────────
+  useEffect(() => {
+    return () => {
+      if (formTimerRef.current) clearTimeout(formTimerRef.current);
+    };
+  }, []);
+
+  // ───────── FETCH PROFILE DATA ─────────
+  useEffect(() => {
+    const fetchProfileData = async () => {
+      if (!clientId) return;
+
+      try {
+        const { ok, data } = await getApprovedClient(clientId);
+
+        if (ok && data) {
+          setProfileData(data);
+          setName(data.FirstName || "");
+          setPhone(data.MobileNumber || "");
+          setBuilding(data.BuildingName || "");
+          setUnitNo(data.UnitName || "");
+        }
+      } catch (error) {
+        console.error("Failed to fetch profile data:", error);
+      }
+    };
+
+    fetchProfileData();
+  }, [clientId]);
+
+  // ───────── FETCH METERS ─────────
+  useEffect(() => {
+    const fetchMeters = async () => {
+      if (!loginKey) return;
+
+      try {
+        const { ok, data } = await getClientMeters(loginKey);
+        if (ok && Array.isArray(data)) {
+          setMeters(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch meters:", error);
+      }
+    };
+
+    fetchMeters();
+  }, [loginKey]);
+
+  // ───────── HANDLERS ─────────
   const handleAddTicketPress = () => {
     setActiveTab("add");
     setFormLoading(true);
 
-    // small delay to show skeleton for the form
-    if (formTimerRef.current) {
-      clearTimeout(formTimerRef.current);
-    }
+    if (formTimerRef.current) clearTimeout(formTimerRef.current);
     formTimerRef.current = setTimeout(() => {
       setFormLoading(false);
     }, 700);
@@ -56,18 +148,58 @@ const TicketScreen = ({ loading = false }) => {
     setActiveTab("dashboard");
   };
 
-  const handleSaveTicket = () => {
-    console.log("Saving ticket:", {
-      name,
-      phone,
-      building,
-      unitNo,
-      issueType,
-      meterName,
-      description,
-    });
-    handleBackToDashboard();
+  const handleSaveTicket = async () => {
+    if (!loginKey) {
+      Alert.alert("Error", "Session expired. Please login again.");
+      return;
+    }
+
+    if (!name || !phone || !unitNo || !meterName) {
+      Alert.alert("Validation", "Please fill all required fields");
+      return;
+    }
+
+    if (!issueType) {
+      Alert.alert("Validation", "Please select issue type");
+      return;
+    }
+
+    try {
+      setFormLoading(true);
+
+      const payload = {
+        Key: loginKey,
+        Name: name,
+        Phone: phone,
+        BuildingName: building,
+        UnitNo: unitNo,
+        IssueType: issueType,
+        MeterName: meterName,
+        Description: description,
+      };
+
+      const { ok, data } = await raiseServiceTicket(payload);
+
+      if (!ok) {
+        throw new Error(data?.message || "Failed to raise ticket");
+      }
+
+      Alert.alert("Success", "Ticket raised successfully");
+
+      // Only reset editable fields
+      setIssueType("");
+      setMeterName("");
+      setDescription("");
+
+      handleBackToDashboard();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Something went wrong");
+    } finally {
+      setFormLoading(false);
+    }
   };
+
+  // ───────── RENDER FUNCTIONS ─────────
 
   // ───────── Dashboard View ─────────
   const renderDashboard = () => (
@@ -171,85 +303,83 @@ const TicketScreen = ({ loading = false }) => {
   // ───────── Add Ticket View (real form) ─────────
   const renderAddTicket = () => (
     <>
-      {/* Header with back button */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={handleBackToDashboard}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={handleBackToDashboard}>
           <Image
             source={require("../../assets/images/arrow.png")}
-            style={{ width: 12, height: 12, tintColor: "#d3d3d3ff" }}
+            style={{ width: 12, height: 12, tintColor: "#fff" }}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Add New Ticket</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.formContainer}>
-        <FormField
-          label="Name"
-          required
-          value={name}
-          onChangeText={setName}
-        />
+        <FormField label="Name" required value={name} readOnly />
+        <FormField label="Phone Number" required value={phone} readOnly />
+        <FormField label="Building Name" value={building} readOnly />
+        <FormField label="Unit No." required value={unitNo} readOnly />
 
-        <FormField
-          label="Phone Number"
-          required
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-        />
+        {/* ISSUE TYPE - FIXED */}
+        <View style={styles.fieldWrapper}>
+          <Text style={styles.label}>
+            Issue Type <Text style={styles.required}>*</Text>
+          </Text>
+          <View style={styles.pickerWrapper}>
+            <Picker 
+              selectedValue={issueType} 
+              onValueChange={setIssueType}
+              style={styles.picker}
+              itemStyle={styles.pickerItem}
+            >
+              <Picker.Item label="Select issue type" value="" color="#9ca3af" />
+              <Picker.Item label="Hardware" value="Hardware" />
+              <Picker.Item label="Software" value="Software" />
+              <Picker.Item label="Connectivity" value="Connectivity" />
+              <Picker.Item label="Power" value="Power" />
+              <Picker.Item label="Others" value="Others" />
+            </Picker>
+          </View>
+        </View>
 
-        <FormField
-          label="Building Name"
-          value={building}
-          onChangeText={setBuilding}
-        />
-
-        <FormField
-          label="Unit No."
-          required
-          value={unitNo}
-          onChangeText={setUnitNo}
-        />
-
-        <FormField
-          label="Issue Type"
-          required
-          value={issueType}
-          onChangeText={setIssueType}
-          placeholder="Select issue type"
-        />
-
-        <FormField
-          label="Meter Name"
-          required
-          value={meterName}
-          onChangeText={setMeterName}
-          placeholder="Select meter"
-        />
+        {/* METER NAME DROPDOWN - FIXED */}
+        <View style={styles.fieldWrapper}>
+          <Text style={styles.label}>
+            Meter Name <Text style={styles.required}>*</Text>
+          </Text>
+          <View style={styles.pickerWrapper}>
+            <Picker 
+              selectedValue={meterName} 
+              onValueChange={setMeterName}
+              style={styles.picker}
+              itemStyle={styles.pickerItem}
+            >
+              <Picker.Item label="Select meter" value="" color="#9ca3af" />
+              {meters.map((m) => (
+                <Picker.Item
+                  key={m.MeterID}
+                  label={m.MeterName}
+                  value={m.MeterName}
+                />
+              ))}
+            </Picker>
+          </View>
+        </View>
 
         <FormField
           label="Description"
           multiline
           value={description}
           onChangeText={setDescription}
-          placeholder="Describe the issue..."
           height={90}
         />
 
-        {/* Buttons */}
-        <View className={styles.buttonRow}>
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveTicket}>
-            <Text style={styles.saveText}>Save</Text>
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.cancelButton} onPress={handleBackToDashboard}>
+            <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={handleBackToDashboard}
-          >
-            <Text style={styles.cancelText}>Cancel</Text>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveTicket}>
+            <Text style={styles.saveText}>Save Ticket</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -259,7 +389,6 @@ const TicketScreen = ({ loading = false }) => {
   // ───────── Skeleton View for Dashboard ─────────
   const renderDashboardSkeleton = () => (
     <>
-      {/* Header skeleton */}
       <SkeletonBox
         style={{
           width: "40%",
@@ -269,7 +398,6 @@ const TicketScreen = ({ loading = false }) => {
         }}
       />
 
-      {/* Summary cards skeleton */}
       <View style={styles.cardsWrapper}>
         {Array.from({ length: 4 }).map((_, index) => (
           <View key={index} style={[styles.card, styles.skeletonCard]}>
@@ -304,7 +432,6 @@ const TicketScreen = ({ loading = false }) => {
         ))}
       </View>
 
-      {/* Add button skeleton */}
       <SkeletonBox
         style={{
           alignSelf: "center",
@@ -315,7 +442,6 @@ const TicketScreen = ({ loading = false }) => {
         }}
       />
 
-      {/* Detail card skeleton */}
       <View style={[styles.detailCard, styles.skeletonCard]}>
         {Array.from({ length: 7 }).map((_, index) => (
           <View
@@ -345,7 +471,6 @@ const TicketScreen = ({ loading = false }) => {
   // ───────── Skeleton View for Add Form ─────────
   const renderAddFormSkeleton = () => (
     <>
-      {/* Header skeleton with back button circle + title bar */}
       <View style={styles.header}>
         <SkeletonBox
           style={{
@@ -373,7 +498,6 @@ const TicketScreen = ({ loading = false }) => {
       >
         {Array.from({ length: 7 }).map((_, index) => (
           <View key={index} style={{ marginBottom: 14 }}>
-            {/* Label skeleton */}
             <SkeletonBox
               style={{
                 width: "30%",
@@ -382,18 +506,16 @@ const TicketScreen = ({ loading = false }) => {
                 marginBottom: 6,
               }}
             />
-            {/* Input skeleton */}
             <SkeletonBox
               style={{
                 width: "100%",
-                height: index === 6 ? 80 : 40, // last one like textarea
+                height: index === 6 ? 80 : 40,
                 borderRadius: 8,
               }}
             />
           </View>
         ))}
 
-        {/* Buttons row skeleton */}
         <View style={styles.buttonRow}>
           <SkeletonBox
             style={{
@@ -415,12 +537,11 @@ const TicketScreen = ({ loading = false }) => {
     </>
   );
 
+  // ───────── MAIN RENDER ─────────
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
-        {/* 🔹 GreetingCard at top (now uses context internally) */}
-        <GreetingCard loading={loading} />
-
+        <GreetingCard />
         {loading && activeTab === "dashboard"
           ? renderDashboardSkeleton()
           : activeTab === "dashboard"
@@ -433,55 +554,12 @@ const TicketScreen = ({ loading = false }) => {
   );
 };
 
-/* ─── Modern card component ────────────────────────────── */
-const SummaryCard = ({ title, value, color, borderColor, icon }) => (
-  <TouchableOpacity
-    activeOpacity={0.85}
-    style={[styles.card, { backgroundColor: color, borderColor }]}
-  >
-    <View style={styles.cardTopRow}>
-      <View style={[styles.cardIconWrapper, { borderColor }]}>{icon}</View>
-
-      <View style={styles.cardTextWrapper}>
-        <Text style={styles.cardValue}>{value}</Text>
-        <Text numberOfLines={1} style={styles.cardTitle}>
-          {title}
-        </Text>
-      </View>
-    </View>
-  </TouchableOpacity>
-);
-
-const Row = ({ label, value, customValue }) => (
-  <View style={styles.row}>
-    <Text style={styles.rowLabel}>{label}</Text>
-    {customValue ? customValue : <Text style={styles.rowValue}>{value}</Text>}
-  </View>
-);
-
-const FormField = ({
-  label,
-  required,
-  height = 44,
-  multiline = false,
-  ...inputProps
-}) => (
-  <View style={styles.fieldWrapper}>
-    <Text style={styles.label}>
-      {label}
-      {required && <Text style={styles.required}>*</Text>}
-    </Text>
-    <TextInput
-      style={[styles.input, { height }]}
-      placeholderTextColor="#9ca3af"
-      multiline={multiline}
-      textAlignVertical={multiline ? "top" : "center"}
-      {...inputProps}
-    />
-  </View>
-);
+// ═══════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════
 
 const styles = StyleSheet.create({
+  // ─── Layout Styles ───
   safe: {
     flex: 1,
     backgroundColor: "#f5f7fb",
@@ -495,28 +573,22 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 24,
   },
+
+  // ─── Header Styles ───
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: "#F5F5DC",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 4,
-    paddingTop: 10,
-    paddingBottom: 10,
     paddingHorizontal: 20,
-    marginBottom: 16,
+    backgroundColor: "#F5F5DC",
+    borderRadius: 10,
+    marginTop: 4,
+    marginBottom: 14,
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 12,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
-     marginBottom: 12,
-    borderRadius: 10,
-    marginBottom: 14,
   },
   headerText: {
     fontSize: 18,
@@ -538,7 +610,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  /* ─── Summary cards ───────────────────────────── */
+  // ─── Summary Cards Styles ───
   cardsWrapper: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -585,7 +657,7 @@ const styles = StyleSheet.create({
     color: "#4b5563",
   },
 
-  /* ─── Button & detail card ───────── */
+  // ─── Button Styles ───
   addButton: {
     backgroundColor: "#1d4ed8",
     alignSelf: "center",
@@ -599,6 +671,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+  actionRow: {
+    flexDirection: "row",
+    marginTop: 24,
+    gap: 12,
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: "#1d4ed8",
+    paddingVertical: 12,
+    borderRadius: 24,
+    alignItems: "center",
+    elevation: 3,
+  },
+  saveText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: "#f3f4f6",
+    paddingVertical: 12,
+    borderRadius: 24,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+  },
+  cancelText: {
+    color: "#374151",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+
+  // ─── Detail Card & Row Styles ───
   detailCard: {
     marginTop: 8,
     backgroundColor: "rgb(248,249,250)",
@@ -649,7 +755,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  /* ─── Form Styles ──────────────── */
+  // ─── Form Styles ───
   fieldWrapper: {
     marginBottom: 10,
   },
@@ -669,36 +775,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     fontSize: 13,
   },
-  buttonRow: {
-    marginTop: 18,
-    flexDirection: "column",
+  readOnlyInput: {
+    backgroundColor: "#f3f4f6",
+    color: "#6b7280",
+  },
+  pickerWrapper: {
+    backgroundColor: "#ffffff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    overflow: "hidden",
+    height: 44,
     justifyContent: "center",
   },
-  saveButton: {
-    backgroundColor: "#1d4ed8",
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 10,
+  picker: {
+    height: 44,
+    width: "100%",
+    fontSize: 13,
+    color: "#111827",
   },
-  saveText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  cancelButton: {
-    backgroundColor: "#9ca3af",
-    paddingHorizontal: 24,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  cancelText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "600",
+  pickerItem: {
+    fontSize: 13,
+    height: 44,
   },
 
-  // 🔹 Skeleton base style
+  // ─── Skeleton Styles ───
   skeletonBox: {
     backgroundColor: "#E5E7EB",
   },
@@ -707,10 +808,14 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
   },
 
+  // ─── Utility Styles ───
   errorText: {
     fontSize: 12,
     color: "#b91c1c",
     marginBottom: 8,
+  },
+  buttonRow: {
+    flexDirection: "row",
   },
 });
 
