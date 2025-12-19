@@ -66,13 +66,36 @@ const AppContent = () => {
 
     // 🏢 OWNER (ClientTypeid/UserTypeId = 1)
     if (clientType === 1) {
-      // Check building select logic
-      if (!session.selectedBuilding) {
-        setSelectedPage("owner-building-select");
+      const status = Number(session.status);
+
+      // Check for SubmissionStatus in various forms
+      const rawSubmissionStatus =
+        session.SubmissionStatus ||
+        session.submissionStatus ||
+        "";
+
+      const submissionStatus = rawSubmissionStatus.toLowerCase();
+
+      // ✅ Approved owner (status = 1)
+      if (status === 1) {
+        // Check building select logic
+        if (!session.selectedBuilding) {
+          setSelectedPage("owner-building-select");
+          return;
+        }
+        setSelectedPage("dashboard");
         return;
+      } else {
+        // ❌ Rejected owner
+        if (submissionStatus === "rejected") {
+          setSelectedPage("approval-cancelled");
+          return;
+        } else {
+          // ⏳ Pending owner (default if not approved and not rejected)
+          setSelectedPage("approval-pending");
+          return;
+        }
       }
-      setSelectedPage("dashboard");
-      return;
     }
 
     // 👤 TENANT (ClientTypeid/UserTypeId = 2)
